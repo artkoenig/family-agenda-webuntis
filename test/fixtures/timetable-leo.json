@@ -1,0 +1,32 @@
+{
+  "jsonrpc": "2.0",
+  "id": "family-agenda",
+  "result": {
+    "timetable": {
+      "displayableStartDate": "2026-09-14",
+      "displayableEndDate": "2026-09-27",
+      "periods": [
+        {
+          "id": 91001, "lessonId": 601, "startDateTime": "2026-09-15T08:00Z", "endDateTime": "2026-09-15T09:35Z",
+          "foreColor": "#000000", "backColor": "#7fc97f", "innerForeColor": "#000000", "innerBackColor": "#7fc97f",
+          "text": { "lesson": "", "substitution": "", "info": "" },
+          "elements": [
+            { "type": "CLASS", "id": 42, "orgId": 42, "missing": false, "state": "REGULAR" },
+            { "type": "TEACHER", "id": 35, "orgId": 35, "missing": false, "state": "REGULAR" },
+            { "type": "SUBJECT", "id": 14, "orgId": 14, "missing": false, "state": "REGULAR" },
+            { "type": "ROOM", "id": 25, "orgId": 25, "missing": false, "state": "REGULAR" }
+          ],
+          "can": [], "is": ["STANDARD"], "homeWorks": [], "exam": null, "isOnlinePeriod": false, "blockHash": 5
+        }
+      ]
+    },
+    "masterData": {
+      "timeStamp": 1789286400000,
+      "klassen": [{ "id": 42, "name": "5a", "longName": "Klasse 5a", "departmentId": 0, "startDate": "2026-08-10", "endDate": "2027-07-23", "foreColor": null, "backColor": null, "active": true, "displayable": true }],
+      "rooms": [{ "id": 25, "name": "KU1", "longName": "Kunstraum", "departmentId": 0, "foreColor": null, "backColor": null, "active": true, "displayAllowed": true }],
+      "subjects": [{ "id": 14, "name": "KU", "longName": "Kunst", "departmentIds": [], "foreColor": null, "backColor": "#7fc97f", "active": true, "displayAllowed": true }],
+      "teachers": [],
+      "holidays": [], "schoolyears": [], "timeGrid": { "days": [] }
+    }
+  }
+}
