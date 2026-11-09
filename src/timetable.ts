@@ -1,6 +1,6 @@
 import { statedTextLimits, type SourceRecord } from "@family-agenda/plugin-contract";
 
-export type Json = Record<string, unknown>;
+export type JsonObject = Record<string, unknown>;
 
 type Stated = Extract<SourceRecord["content"], { kind: "stated" }>["stated"];
 type StatedLesson = Extract<Stated, { kind: "lesson" }>;
@@ -9,9 +9,9 @@ type StatedLesson = Extract<Stated, { kind: "lesson" }>;
 export type SeenLesson = { day: string; lesson: StatedLesson };
 
 /** The Lessons of a Timetable, which Untis calls periods, with their Timetable Changes, by their ids. */
-export function seenIn(result: Json, timeZone: string): [string, SeenLesson][] {
+export function seenIn(result: JsonObject, timeZone: string): [string, SeenLesson][] {
   const master = isObject(result.masterData) ? result.masterData : {};
-  const named = (list: unknown, name: (entry: Json) => string | null) =>
+  const named = (list: unknown, name: (entry: JsonObject) => string | null) =>
     new Map(
       (Array.isArray(list) ? list : []).filter(isObject).flatMap((entry) => {
         const value = name(entry);
@@ -37,13 +37,7 @@ export function seenIn(result: Json, timeZone: string): [string, SeenLesson][] {
     const room = nameOf("ROOM", rooms);
     const teacher = nameOf("TEACHER", teachers);
     const flags = flagsOf(period.is);
-    const change = flags.includes("CANCELLED")
-      ? "cancellation"
-      : teacher.previous || subject.previous || flags.includes("SUBSTITUTION")
-        ? "substitution"
-        : room.previous || flags.includes("ROOM_SUBSTITUTION")
-          ? "room-change"
-          : null;
+    const change = changeOf(flags, { teacher, subject, room });
     const periodText = isObject(period.text) ? period.text : {};
     const lesson: StatedLesson = {
       kind: "lesson",
@@ -60,8 +54,18 @@ export function seenIn(result: Json, timeZone: string): [string, SeenLesson][] {
   });
 }
 
+type Names = { name: string | null; previous: string | null };
+
+/** How a Lesson deviates from the Timetable: the flags Untis sets, or an element it substituted. */
+function changeOf(flags: string[], elements: { teacher: Names; subject: Names; room: Names }): StatedLesson["change"] {
+  if (flags.includes("CANCELLED")) return "cancellation";
+  if (elements.teacher.previous || elements.subject.previous || flags.includes("SUBSTITUTION")) return "substitution";
+  if (elements.room.previous || flags.includes("ROOM_SUBSTITUTION")) return "room-change";
+  return null;
+}
+
 /** The element's name now, and before if it was substituted; Untis keeps the original's id as `orgId`. */
-function namesOf(found: Json | undefined, names: Map<number, string>): { name: string | null; previous: string | null } {
+function namesOf(found: JsonObject | undefined, names: Map<number, string>): { name: string | null; previous: string | null } {
   const id = numberOf(found?.id);
   // An `orgId` of 0 means the element was not substituted.
   const orgId = numberOf(found?.orgId) || id;
@@ -123,7 +127,21 @@ export function localDate(at: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
 }
 
-export function addDays(date: string, days: number): string {
+/** The parameters of `getTimetable2017` for a child's Timetable of `days` days from `today` (`YYYY-MM-DD`). */
+export function timetableRequest(childId: number, today: string, days: number): JsonObject {
+  const untisDate = (date: string) => Number(date.replaceAll("-", ""));
+  return {
+    id: childId,
+    type: "STUDENT",
+    startDate: untisDate(today),
+    endDate: untisDate(addDays(today, days - 1)),
+    masterDataTimestamp: 0,
+    timetableTimestamp: 0,
+    timetableTimestamps: [],
+  };
+}
+
+function addDays(date: string, days: number): string {
   const next = new Date(`${date}T00:00:00Z`);
   next.setUTCDate(next.getUTCDate() + days);
   return next.toISOString().slice(0, 10);
@@ -135,6 +153,6 @@ export function text(value: unknown): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-export function isObject(value: unknown): value is Json {
+export function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

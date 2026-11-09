@@ -106,9 +106,46 @@ describe("the WebUntis plugin", () => {
   it("takes the server from an address an Admin pasted", async () => {
     const untis = server();
 
-    await webUntisPlugin({ fetch: untis.fetch }).poll({ config: { ...config, plain: { ...config.plain, server: " https://park.webuntis.com/WebUntis/?school=x " } } });
+    await webUntisPlugin({ fetch: untis.fetch }).poll({ config: { ...config, plain: { ...config.plain, server: " HTTPS://Park.WebUntis.com/WebUntis/?school=x " } } });
 
     expect(untis.requests[0]?.url.host).toBe("park.webuntis.com");
+  });
+
+  it("refuses a server that is still no bare host once scheme and path are gone", async () => {
+    const plugin = webUntisPlugin({ fetch: server().fetch });
+
+    for (const value of ["park webuntis.com", "park.webuntis.com:443", "ftp://park.webuntis.com", "", "park..webuntis.com"]) {
+      expect(await plugin.answer({ config: { ...config, plain: { ...config.plain, server: value } } })).toEqual({
+        status: 422,
+        body: { kind: "definite", message: "The WebUntis server is no host name, such as park.webuntis.com." },
+      });
+    }
+  });
+
+  it("fails definitely, saying so, when the key is missing", async () => {
+    expect(await webUntisPlugin({ fetch: server().fetch }).answer({ config: { ...config, secrets: {} } })).toEqual({
+      status: 422,
+      body: { kind: "definite", message: "The WebUntis key is missing." },
+    });
+  });
+
+  it("reads the school's wall-clock time in the Family's time zone on both sides of each change of offset", async () => {
+    for (const { day, now: at, start, end } of [
+      // Berlin moves from +01:00 to +02:00 on 2026-03-29 and back on 2026-10-25.
+      { day: "2026-03-28", now: "2026-03-27T07:00:00Z", start: "2026-03-28T07:00:00.000Z", end: "2026-03-28T07:45:00.000Z" },
+      { day: "2026-03-30", now: "2026-03-27T07:00:00Z", start: "2026-03-30T06:00:00.000Z", end: "2026-03-30T06:45:00.000Z" },
+      { day: "2026-10-24", now: "2026-10-23T07:00:00Z", start: "2026-10-24T06:00:00.000Z", end: "2026-10-24T06:45:00.000Z" },
+      { day: "2026-10-26", now: "2026-10-23T07:00:00Z", start: "2026-10-26T07:00:00.000Z", end: "2026-10-26T07:45:00.000Z" },
+    ]) {
+      const untis = server();
+      const maths = lessonIn(untis.timetables[1201]!, 90001);
+      maths.startDateTime = `${day}T08:00Z`;
+      maths.endDateTime = `${day}T08:45Z`;
+
+      const { sourceRecords } = await webUntisPlugin({ fetch: untis.fetch }).poll({ now: new Date(at) });
+
+      expect(statements(sourceRecords).find((statement) => statement.key === "1201/90001")?.span).toEqual({ allDay: false, start, end });
+    }
   });
 
   it("states each child's Lessons whole, keyed by child and the id Untis gives the Lesson, with how they deviate from the Timetable", async () => {
@@ -368,7 +405,6 @@ describe("the WebUntis plugin", () => {
     const plugin = webUntisPlugin({ fetch: server().fetch });
 
     for (const plain of [
-      { ...config.plain, server: "park webuntis" },
       { ...config.plain, school: " " },
       { ...config.plain, user: 7 },
     ]) {

@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import type { IngestResult, RunContext, SourceRecord } from "@family-agenda/plugin-contract";
 import { PluginError, type PluginImplementation } from "@family-agenda/plugin-kit";
 import packageJson from "../package.json" with { type: "json" };
-import { addDays, isObject, localDate, seenIn, text, type Json } from "./timetable";
+import { isObject, localDate, seenIn, text, timetableRequest, type JsonObject } from "./timetable";
 
 export type WebUntisPluginOptions = {
   /** How the plugin reaches WebUntis; recorded responses in tests. */
@@ -26,6 +26,12 @@ type State = { declared: string[] | null; known: Record<string, string> };
 
 type Child = { id: number; name: string };
 
+/** The version of the Untis Mobile API the plugin speaks, as the app sends it. */
+const apiVersion = "i2.2";
+
+/** The JSON-RPC id of every request. */
+const requestId = "family-agenda";
+
 /** The run as the plugin uses it: the contract's context with its time as a Date. */
 type Run = { config: RunContext["config"]; now: Date };
 
@@ -47,19 +53,19 @@ export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): Plugi
   const timeoutMs = options.timeoutMs ?? 30_000;
 
   /** Calls a method of the mobile API with a fresh one-time password, and returns its result. */
-  async function call(run: Run, method: string, params: Json): Promise<Json> {
+  async function call(run: Run, method: string, params: JsonObject): Promise<JsonObject> {
     const { server, school, user } = connectionOf(run.config);
     const url = new URL(`https://${server}/WebUntis/jsonrpc_intern.do`);
     url.searchParams.set("m", method);
     url.searchParams.set("school", school);
-    url.searchParams.set("v", "i2.2");
-    const auth = { user, otp: oneTimePassword(run.config.secrets.secret ?? "", run.now), clientTime: run.now.getTime() };
+    url.searchParams.set("v", apiVersion);
+    const auth = { user, otp: oneTimePassword(keyOf(run.config), run.now), clientTime: run.now.getTime() };
     let response: Response;
     try {
       response = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: "family-agenda", method, params: [{ ...params, auth }], jsonrpc: "2.0" }),
+        body: JSON.stringify({ id: requestId, method, params: [{ ...params, auth }], jsonrpc: "2.0" }),
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
@@ -87,26 +93,17 @@ export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): Plugi
   async function poll(context: RunContext): Promise<IngestResult> {
     const run: Run = { config: context.config, now: new Date(context.now) };
     const previous = parseState(context.syncCursor);
-    const read = await childrenOf(run);
-    const current = read.map((child) => String(child.id));
+    const children = await childrenOf(run);
+    const current = children.map((child) => String(child.id));
     // A child that is gone is archived, and so is the one Source Attribute a Source from before
     // the children were Source Attributes declared for the account.
     const archived = (previous.declared ?? [legacyAttribute]).filter((id) => !current.includes(id));
     const today = localDate(run.now, context.timeZone);
-    const lastDay = addDays(today, daysAhead - 1);
 
     const sourceRecords: SourceRecord[] = [];
     const known: Record<string, string> = {};
-    for (const child of read) {
-      const result = await call(run, "getTimetable2017", {
-        id: child.id,
-        type: "STUDENT",
-        startDate: Number(today.replaceAll("-", "")),
-        endDate: Number(lastDay.replaceAll("-", "")),
-        masterDataTimestamp: 0,
-        timetableTimestamp: 0,
-        timetableTimestamps: [],
-      });
+    for (const child of children) {
+      const result = await call(run, "getTimetable2017", timetableRequest(child.id, today, daysAhead));
       for (const [lessonId, seen] of seenIn(result, context.timeZone)) {
         const key = `${child.id}/${lessonId}`;
         known[key] = seen.day;
@@ -118,7 +115,7 @@ export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): Plugi
       sourceRecords,
       syncCursor: JSON.stringify(state),
       withdrawn: goneFrom(previous.known, known, today),
-      attributes: { declared: read.map((child) => ({ externalId: String(child.id), name: child.name })), archived },
+      attributes: { declared: children.map((child) => ({ externalId: String(child.id), name: child.name })), archived },
     };
   }
 
@@ -207,31 +204,49 @@ function connectionOf(config: RunContext["config"]): { server: string; school: s
     const value = config.plain[key];
     return typeof value === "string" ? value.trim() : "";
   };
-  // An Admin may paste the address the browser shows rather than the server's name.
-  const server = plain("server").replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+  const server = hostOf(plain("server"));
   const school = plain("school");
   const user = plain("user");
-  if (!/^[a-z0-9.-]+$/i.test(server)) throw new PluginError("definite", "The WebUntis server is no host name, such as park.webuntis.com.");
+  if (server === null) throw new PluginError("definite", "The WebUntis server is no host name, such as park.webuntis.com.");
   if (school === "" || user === "") throw new PluginError("definite", "The WebUntis school and user must be given.");
   return { server, school, user };
 }
 
-async function readJson(response: Response): Promise<Json> {
+/**
+ * The host of the `server` field, by the rule the core's egress allowlist applies to a host field:
+ * without `http://` or `https://`, without everything from the first `/`, in lower case. An Admin
+ * may paste the address the browser shows rather than the server's name. Null if no bare host is left.
+ */
+export function hostOf(value: string): string | null {
+  const host = value.trim().replace(/^https?:\/\//i, "").split("/")[0]!.toLowerCase();
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)*$/.test(host) ? host : null;
+}
+
+/** The key of the account's access through Untis Mobile. */
+function keyOf(config: RunContext["config"]): string {
+  const key = config.secrets.secret?.trim() ?? "";
+  if (key === "") throw new PluginError("definite", "The WebUntis key is missing.");
+  return key;
+}
+
+async function readJson(response: Response): Promise<JsonObject> {
   try {
-    return (await response.json()) as Json;
+    return (await response.json()) as JsonObject;
   } catch {
     throw new PluginError("temporary", "WebUntis answered with no JSON.");
   }
 }
 
-/** Untis's JSON-RPC error codes for a login it refuses. */
-const refusedLogin = new Set([-8504, -8520]);
+/** Untis's JSON-RPC error codes for a login it refuses: bad credentials, and not authenticated. */
+const badCredentials = -8504;
+const notAuthenticated = -8520;
+const refusedLogin = new Set([badCredentials, notAuthenticated]);
 
 /**
  * The result of a JSON-RPC answer. A refusal is told by its numeric code only: the message Untis
  * gives is not passed on, as no one has checked what it may repeat of the request.
  */
-function parseAnswer(answer: Json, method: string): Json {
+function parseAnswer(answer: JsonObject, method: string): JsonObject {
   if (isObject(answer.error)) {
     const code = typeof answer.error.code === "number" ? answer.error.code : null;
     if (code !== null && refusedLogin.has(code)) throw new PluginError("definite", "WebUntis refused the user or key.");
@@ -242,7 +257,7 @@ function parseAnswer(answer: Json, method: string): Json {
 }
 
 /** A child of the account, if it has an id. */
-function childOf(child: Json): Child[] {
+function childOf(child: JsonObject): Child[] {
   if (typeof child.id !== "number") return [];
   const name = [child.firstName, child.lastName].filter((part) => typeof part === "string" && part !== "").join(" ");
   return [{ id: child.id, name: name || (text(child.displayName) ?? String(child.id)) }];
