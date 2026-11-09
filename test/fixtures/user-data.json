@@ -1,0 +1,22 @@
+{
+  "jsonrpc": "2.0",
+  "id": "family-agenda",
+  "result": {
+    "masterData": { "timeStamp": 1789286400000, "absenceReasons": [], "departments": [], "duties": [], "eventReasons": [], "eventReasonGroups": [], "excuseStatuses": [], "holidays": [], "klassen": [], "rooms": [], "subjects": [], "teachers": [], "teachingMethods": [], "schoolyears": [], "timeGrid": { "days": [] } },
+    "userData": {
+      "elemType": "LEGAL_GUARDIAN",
+      "elemId": 4711,
+      "displayName": "Anna König",
+      "schoolName": "Gymnasium am Park",
+      "departmentId": 0,
+      "children": [
+        { "id": 1201, "type": "STUDENT", "displayName": "König Mia", "firstName": "Mia", "lastName": "König" },
+        { "id": 1202, "type": "STUDENT", "displayName": "König Leo", "firstName": "Leo", "lastName": "König" }
+      ],
+      "klassenIds": [],
+      "rights": ["R_MY_TIMETABLE"]
+    },
+    "settings": { "showAbsenceReason": true, "showAbsenceText": true, "absenceCheckRequired": false, "defaultAbsenceReasonId": 0, "defaultLatenessReasonId": 0, "defaultAbsenceEndTime": "", "customAbsenceEndTime": "" },
+    "messengerSettings": null
+  }
+}

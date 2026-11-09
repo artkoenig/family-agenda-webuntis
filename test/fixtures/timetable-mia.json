@@ -1,0 +1,82 @@
+{
+  "jsonrpc": "2.0",
+  "id": "family-agenda",
+  "result": {
+    "timetable": {
+      "displayableStartDate": "2026-09-14",
+      "displayableEndDate": "2026-09-27",
+      "periods": [
+        {
+          "id": 90001, "lessonId": 501, "startDateTime": "2026-09-15T08:00Z", "endDateTime": "2026-09-15T08:45Z",
+          "foreColor": "#000000", "backColor": "#f49f25", "innerForeColor": "#000000", "innerBackColor": "#f49f25",
+          "text": { "lesson": "", "substitution": "", "info": "" },
+          "elements": [
+            { "type": "CLASS", "id": 41, "orgId": 41, "missing": false, "state": "REGULAR" },
+            { "type": "TEACHER", "id": 31, "orgId": 31, "missing": false, "state": "REGULAR" },
+            { "type": "SUBJECT", "id": 11, "orgId": 11, "missing": false, "state": "REGULAR" },
+            { "type": "ROOM", "id": 21, "orgId": 21, "missing": false, "state": "REGULAR" }
+          ],
+          "can": [], "is": ["STANDARD"], "homeWorks": [], "exam": null, "isOnlinePeriod": false, "blockHash": 1
+        },
+        {
+          "id": 90002, "lessonId": 502, "startDateTime": "2026-09-15T08:50Z", "endDateTime": "2026-09-15T09:35Z",
+          "foreColor": "#000000", "backColor": "#a781b5", "innerForeColor": "#000000", "innerBackColor": "#a781b5",
+          "text": { "lesson": "", "substitution": "Vertretung", "info": "" },
+          "elements": [
+            { "type": "CLASS", "id": 41, "orgId": 41, "missing": false, "state": "REGULAR" },
+            { "type": "TEACHER", "id": 33, "orgId": 32, "missing": false, "state": "SUBSTITUTED" },
+            { "type": "SUBJECT", "id": 12, "orgId": 12, "missing": false, "state": "REGULAR" },
+            { "type": "ROOM", "id": 22, "orgId": 22, "missing": false, "state": "REGULAR" }
+          ],
+          "can": [], "is": ["IRREGULAR"], "homeWorks": [], "exam": null, "isOnlinePeriod": false, "blockHash": 2
+        },
+        {
+          "id": 90003, "lessonId": 503, "startDateTime": "2026-09-15T09:55Z", "endDateTime": "2026-09-15T10:40Z",
+          "foreColor": "#000000", "backColor": "#b1b3b4", "innerForeColor": "#000000", "innerBackColor": "#b1b3b4",
+          "text": { "lesson": "", "substitution": "Lehrkraft erkrankt", "info": "" },
+          "elements": [
+            { "type": "CLASS", "id": 41, "orgId": 41, "missing": false, "state": "REGULAR" },
+            { "type": "TEACHER", "id": 34, "orgId": 34, "missing": false, "state": "ABSENT" },
+            { "type": "SUBJECT", "id": 13, "orgId": 13, "missing": false, "state": "REGULAR" },
+            { "type": "ROOM", "id": 23, "orgId": 23, "missing": false, "state": "REGULAR" }
+          ],
+          "can": [], "is": ["CANCELLED"], "homeWorks": [], "exam": null, "isOnlinePeriod": false, "blockHash": 3
+        },
+        {
+          "id": 90004, "lessonId": 501, "startDateTime": "2026-09-16T08:00Z", "endDateTime": "2026-09-16T08:45Z",
+          "foreColor": "#000000", "backColor": "#f49f25", "innerForeColor": "#000000", "innerBackColor": "#f49f25",
+          "text": { "lesson": "", "substitution": "", "info": "" },
+          "elements": [
+            { "type": "CLASS", "id": 41, "orgId": 41, "missing": false, "state": "REGULAR" },
+            { "type": "TEACHER", "id": 31, "orgId": 31, "missing": false, "state": "REGULAR" },
+            { "type": "SUBJECT", "id": 11, "orgId": 11, "missing": false, "state": "REGULAR" },
+            { "type": "ROOM", "id": 24, "orgId": 21, "missing": false, "state": "SUBSTITUTED" }
+          ],
+          "can": [], "is": ["IRREGULAR"], "homeWorks": [], "exam": null, "isOnlinePeriod": false, "blockHash": 4
+        }
+      ]
+    },
+    "masterData": {
+      "timeStamp": 1789286400000,
+      "klassen": [{ "id": 41, "name": "7b", "longName": "Klasse 7b", "departmentId": 0, "startDate": "2026-08-10", "endDate": "2027-07-23", "foreColor": null, "backColor": null, "active": true, "displayable": true }],
+      "rooms": [
+        { "id": 21, "name": "101", "longName": "Raum 101", "departmentId": 0, "foreColor": null, "backColor": null, "active": true, "displayAllowed": true },
+        { "id": 22, "name": "102", "longName": "Raum 102", "departmentId": 0, "foreColor": null, "backColor": null, "active": true, "displayAllowed": true },
+        { "id": 23, "name": "PH1", "longName": "Physiksaal", "departmentId": 0, "foreColor": null, "backColor": null, "active": true, "displayAllowed": true },
+        { "id": 24, "name": "204", "longName": "Raum 204", "departmentId": 0, "foreColor": null, "backColor": null, "active": true, "displayAllowed": true }
+      ],
+      "subjects": [
+        { "id": 11, "name": "M", "longName": "Mathematik", "departmentIds": [], "foreColor": null, "backColor": "#f49f25", "active": true, "displayAllowed": true },
+        { "id": 12, "name": "E", "longName": "Englisch", "departmentIds": [], "foreColor": null, "backColor": "#a781b5", "active": true, "displayAllowed": true },
+        { "id": 13, "name": "PH", "longName": "Physik", "departmentIds": [], "foreColor": null, "backColor": "#b1b3b4", "active": true, "displayAllowed": true }
+      ],
+      "teachers": [
+        { "id": 31, "name": "BRA", "firstName": "Jonas", "lastName": "Brandt", "departmentIds": [], "foreColor": null, "backColor": null, "entryDate": null, "exitDate": null, "active": true, "displayAllowed": true },
+        { "id": 32, "name": "ROT", "firstName": "Petra", "lastName": "Roth", "departmentIds": [], "foreColor": null, "backColor": null, "entryDate": null, "exitDate": null, "active": true, "displayAllowed": true },
+        { "id": 33, "name": "WEB", "firstName": "Sara", "lastName": "Weber", "departmentIds": [], "foreColor": null, "backColor": null, "entryDate": null, "exitDate": null, "active": true, "displayAllowed": true },
+        { "id": 34, "name": "LAN", "firstName": "Eva", "lastName": "Lang", "departmentIds": [], "foreColor": null, "backColor": null, "entryDate": null, "exitDate": null, "active": true, "displayAllowed": true }
+      ],
+      "holidays": [], "schoolyears": [], "timeGrid": { "days": [] }
+    }
+  }
+}
