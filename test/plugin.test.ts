@@ -55,7 +55,12 @@ function webUntisPlugin(options: WebUntisPluginOptions) {
     if (status !== 200) throw new Error(`poll answered ${status}: ${JSON.stringify(body)}`);
     return body as IngestResult;
   };
-  return { answer, poll, call };
+  const attributes = async ({ now: at = now, ...context }: Context = {}) => {
+    const { status, body } = await call("sourceAttributes", { config, syncCursor: null, now: at.toISOString(), timeZone: "Europe/Berlin", ...context });
+    if (status !== 200) throw new Error(`sourceAttributes answered ${status}: ${JSON.stringify(body)}`);
+    return body as NonNullable<IngestResult["attributes"]>;
+  };
+  return { answer, poll, call, attributes };
 }
 
 /** Each Source Record as its key and the Lesson it states. */
@@ -296,6 +301,27 @@ describe("the WebUntis plugin", () => {
       ],
       archived: [],
     });
+  });
+
+  it("names the children apart from a run with one login, reading no Timetable", async () => {
+    const untis = server();
+    const plugin = webUntisPlugin({ fetch: untis.fetch });
+
+    expect(await plugin.attributes()).toEqual((await webUntisPlugin({ fetch: server().fetch }).poll()).attributes);
+    expect(untis.requests.map((request) => request.body.method)).toEqual(["getUserData2017"]);
+  });
+
+  it("archives apart from a run a child that vanished, and the account's legacy Source Attribute", async () => {
+    const untis = server();
+    const plugin = webUntisPlugin({ fetch: untis.fetch });
+    const first = await plugin.poll();
+    const userData = fixture("user-data.json");
+    const children = ((userData.result as Json).userData as { children: Json[] }).children;
+    ((userData.result as Json).userData as Json).children = children.filter((child) => child.id === 1201);
+    untis.answers.userData = userData;
+
+    expect((await plugin.attributes({ syncCursor: first.syncCursor })).archived).toEqual(["1202"]);
+    expect((await plugin.attributes({ syncCursor: JSON.stringify({ children: [], known: {} }) })).archived).toEqual(["account"]);
   });
 
   it("asks no longer which child to read: every child is read, and setup has no field for it", async () => {

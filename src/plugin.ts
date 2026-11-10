@@ -94,10 +94,6 @@ export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): Plugi
     const run: Run = { config: context.config, now: new Date(context.now) };
     const previous = parseState(context.syncCursor);
     const children = await childrenOf(run);
-    const current = children.map((child) => String(child.id));
-    // A child that is gone is archived, and so is the one Source Attribute a Source from before
-    // the children were Source Attributes declared for the account.
-    const archived = (previous.declared ?? [legacyAttribute]).filter((id) => !current.includes(id));
     const today = localDate(run.now, context.timeZone);
 
     const sourceRecords: SourceRecord[] = [];
@@ -110,13 +106,19 @@ export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): Plugi
         sourceRecords.push({ externalId: key, attributes: [String(child.id)], content: { kind: "stated", stated: seen.lesson } });
       }
     }
-    const state: State = { declared: current.toSorted(), known };
+    const state: State = { declared: children.map((child) => String(child.id)).toSorted(), known };
     return {
       sourceRecords,
       syncCursor: JSON.stringify(state),
       withdrawn: goneFrom(previous.known, known, today),
-      attributes: { declared: children.map((child) => ({ externalId: String(child.id), name: child.name })), archived },
+      attributes: attributesOf(children, previous),
     };
+  }
+
+  /** The children as Source Attributes, apart from a run: one login, no Timetable read. */
+  async function sourceAttributes(context: RunContext) {
+    const children = await childrenOf({ config: context.config, now: new Date(context.now) });
+    return attributesOf(children, parseState(context.syncCursor));
   }
 
   return {
@@ -184,6 +186,19 @@ export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): Plugi
       silentApplies: false,
     },
     poll,
+    sourceAttributes,
+  };
+}
+
+/**
+ * The children declared, and archived those declared before that are gone, as is the one Source
+ * Attribute a Source from before the children were Source Attributes declared for the account.
+ */
+function attributesOf(children: Child[], previous: State): NonNullable<IngestResult["attributes"]> {
+  const current = children.map((child) => String(child.id));
+  return {
+    declared: children.map((child) => ({ externalId: String(child.id), name: child.name })),
+    archived: (previous.declared ?? [legacyAttribute]).filter((id) => !current.includes(id)),
   };
 }
 
