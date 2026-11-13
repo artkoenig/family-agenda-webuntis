@@ -15,7 +15,7 @@ In `plugins.yml` of an Instance. The WebUntis server needs no egress entry: `ser
 ```yaml
 plugins:
   - id: webuntis
-    image: ghcr.io/artkoenig/family-agenda-webuntis:0.2.0
+    image: ghcr.io/artkoenig/family-agenda-webuntis:0.3.0
 ```
 
 The image listens on port 8080 and sends every request through the egress proxy of the call at hand (`egressProxy`, contract 3.0), whose ticket allows that one Source's server; a request through `HTTPS_PROXY` of the environment is refused with `407`.
