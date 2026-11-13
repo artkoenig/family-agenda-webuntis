@@ -22,7 +22,5 @@ COPY --from=build /app/dist ./dist
 
 USER node
 ENV PORT=8080
-# Every request leaves through the egress proxy that compose.plugins.yaml sets in HTTPS_PROXY.
-ENV NODE_USE_ENV_PROXY=1
 EXPOSE 8080
 CMD ["node", "dist/main.mjs"]

@@ -4,7 +4,7 @@ import { createPluginHandler } from "@family-agenda/plugin-kit/server";
 import { pluginClient, type Answer } from "@family-agenda/plugin-kit/testing";
 import { describePluginContract } from "@family-agenda/plugin-kit/vitest";
 import type { IngestResult } from "@family-agenda/plugin-contract";
-import { createWebUntisPlugin, type WebUntisPluginOptions } from "../src/plugin";
+import { createWebUntisPlugin, type FetchDispatcher, type WebUntisPluginOptions } from "../src/plugin";
 
 type Json = Record<string, unknown>;
 
@@ -16,7 +16,10 @@ const config = { plain: { server: "park.webuntis.com", school: "gym-am-park", us
 // Monday 2026-09-14 at 09:00 in Berlin.
 const now = new Date("2026-09-14T07:00:00Z");
 
-type Call = { url: URL; body: { method: string; params: Json[] } };
+type Call = { url: URL; body: { method: string; params: Json[] }; dispatcher?: unknown };
+
+/** The egress proxy the core hands a call, with the ticket for that one Source. */
+const egressProxy = "http://ticket:a-ticket@plugin-webuntis-egress:3128";
 
 /**
  * A WebUntis server answering the mobile API with recorded responses: the parent's children, and
@@ -28,7 +31,7 @@ function server(timetables: Record<number, Json> = { 1201: fixture("timetable-mi
   const fetch = (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : input.toString());
     const body = JSON.parse(init?.body as string) as Call["body"];
-    requests.push({ url, body });
+    requests.push({ url, body, dispatcher: init?.dispatcher });
     if (body.method === "getUserData2017") {
       const answer = answers.userData;
       if (answer instanceof Error) return Promise.reject(answer);
@@ -43,20 +46,20 @@ function server(timetables: Record<number, Json> = { 1201: fixture("timetable-mi
   return { fetch, requests, answers, timetables };
 }
 
-type Context = { config?: { plain: Record<string, unknown>; secrets: Record<string, string> }; syncCursor?: string | null; now?: Date };
+type Context = { config?: { plain: Record<string, unknown>; secrets: Record<string, string> }; syncCursor?: string | null; now?: Date; egressProxy?: string };
 
 /** A plugin as the core sees it, over the kit's validating handler: polls answer status and body. */
 function webUntisPlugin(options: WebUntisPluginOptions) {
   const call = pluginClient(createPluginHandler(createWebUntisPlugin(options)));
   const answer = ({ now: at = now, ...context }: Context = {}): Promise<Answer> =>
-    call("poll", { config, syncCursor: null, now: at.toISOString(), timeZone: "Europe/Berlin", ...context });
+    call("poll", { config, syncCursor: null, now: at.toISOString(), timeZone: "Europe/Berlin", egressProxy, ...context });
   const poll = async (context: Context = {}): Promise<IngestResult> => {
     const { status, body } = await answer(context);
     if (status !== 200) throw new Error(`poll answered ${status}: ${JSON.stringify(body)}`);
     return body as IngestResult;
   };
   const attributes = async ({ now: at = now, ...context }: Context = {}) => {
-    const { status, body } = await call("sourceAttributes", { config, syncCursor: null, now: at.toISOString(), timeZone: "Europe/Berlin", ...context });
+    const { status, body } = await call("sourceAttributes", { config, syncCursor: null, now: at.toISOString(), timeZone: "Europe/Berlin", egressProxy, ...context });
     if (status !== 200) throw new Error(`sourceAttributes answered ${status}: ${JSON.stringify(body)}`);
     return body as NonNullable<IngestResult["attributes"]>;
   };
@@ -85,7 +88,30 @@ const span = (day: string, from: string, until: string) => ({
   end: new Date(`${day}T${until}:00+02:00`).toISOString(),
 });
 
-describePluginContract(() => createPluginHandler(createWebUntisPlugin({ fetch: server().fetch })), { config, now, languages: ["de"] });
+describePluginContract(() => createPluginHandler(createWebUntisPlugin({ fetch: server().fetch })), { config, now, languages: ["de"], egressProxy });
+
+describe("the WebUntis plugin's connection outside", () => {
+  it("requests through the egress proxy of the call, not the environment", async () => {
+    const untis = server();
+    const proxies: string[] = [];
+    const dispatcherFor = (proxy: string) => (proxies.push(proxy), { proxy } as unknown as FetchDispatcher);
+
+    await webUntisPlugin({ fetch: untis.fetch, dispatcherFor }).poll({ egressProxy: "http://ticket:other@plugin-webuntis-egress:3128" });
+
+    expect(proxies).toContain("http://ticket:other@plugin-webuntis-egress:3128");
+    expect(untis.requests.map((request) => request.dispatcher)).not.toContain(undefined);
+  });
+
+  it("names the Source Attributes through the egress proxy too", async () => {
+    const untis = server();
+    const proxies: string[] = [];
+    const dispatcherFor = (proxy: string) => (proxies.push(proxy), { proxy } as unknown as FetchDispatcher);
+
+    await webUntisPlugin({ fetch: untis.fetch, dispatcherFor }).attributes();
+
+    expect(proxies).toEqual([egressProxy]);
+  });
+});
 
 describe("the WebUntis plugin", () => {
   it("logs in with a one-time password from the QR secret, lists the children and asks for each one's Timetable as a STUDENT", async () => {

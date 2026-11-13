@@ -1,12 +1,21 @@
 import { createHmac } from "node:crypto";
+import { ProxyAgent } from "undici";
 import type { IngestResult, RunContext, SourceRecord } from "@family-agenda/plugin-contract";
 import { PluginError, type PluginImplementation } from "@family-agenda/plugin-kit";
 import packageJson from "../package.json" with { type: "json" };
 import { isObject, localDate, seenIn, text, timetableRequest, type JsonObject } from "./timetable";
 
+/**
+ * What `fetch` is given to route a request through a proxy, as the global `fetch` types it. Taken
+ * from there rather than from `undici`, whose own declaration is a second, incompatible copy.
+ */
+export type FetchDispatcher = NonNullable<RequestInit["dispatcher"]>;
+
 export type WebUntisPluginOptions = {
   /** How the plugin reaches WebUntis; recorded responses in tests. */
   fetch?: typeof globalThis.fetch;
+  /** How a call's egress proxy becomes a dispatcher; a `ProxyAgent` of `undici` outside tests. */
+  dispatcherFor?: (egressProxy: string) => FetchDispatcher;
   /** How long a request may take before the run fails. */
   timeoutMs?: number;
 };
@@ -32,8 +41,11 @@ const apiVersion = "i2.2";
 /** The JSON-RPC id of every request. */
 const requestId = "family-agenda";
 
-/** The run as the plugin uses it: the contract's context with its time as a Date. */
-type Run = { config: RunContext["config"]; now: Date };
+/**
+ * The run as the plugin uses it: the contract's context with its time as a Date, and the egress
+ * proxy of the call at hand, whose ticket allows this one Source's server (contract 3.0).
+ */
+type Run = { config: RunContext["config"]; now: Date; egressProxy: string };
 
 /**
  * Reads the Timetables of the children of a WebUntis parent account through the endpoints of the
@@ -50,6 +62,7 @@ type Run = { config: RunContext["config"]; now: Date };
  */
 export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): PluginImplementation {
   const fetch = options.fetch ?? globalThis.fetch;
+  const dispatcherFor = options.dispatcherFor ?? ((egressProxy: string) => new ProxyAgent(egressProxy) as unknown as FetchDispatcher);
   const timeoutMs = options.timeoutMs ?? 30_000;
 
   /** Calls a method of the mobile API with a fresh one-time password, and returns its result. */
@@ -67,6 +80,7 @@ export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): Plugi
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id: requestId, method, params: [{ ...params, auth }], jsonrpc: "2.0" }),
         signal: AbortSignal.timeout(timeoutMs),
+        dispatcher: dispatcherFor(run.egressProxy),
       });
     } catch (error) {
       throw new PluginError("temporary", `WebUntis could not be reached${reasonOf(error)}.`);
@@ -91,7 +105,7 @@ export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): Plugi
   }
 
   async function poll(context: RunContext): Promise<IngestResult> {
-    const run: Run = { config: context.config, now: new Date(context.now) };
+    const run: Run = { config: context.config, now: new Date(context.now), egressProxy: context.egressProxy };
     const previous = parseState(context.syncCursor);
     const children = await childrenOf(run);
     const today = localDate(run.now, context.timeZone);
@@ -117,7 +131,7 @@ export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): Plugi
 
   /** The children as Source Attributes, apart from a run: one login, no Timetable read. */
   async function sourceAttributes(context: RunContext) {
-    const children = await childrenOf({ config: context.config, now: new Date(context.now) });
+    const children = await childrenOf({ config: context.config, now: new Date(context.now), egressProxy: context.egressProxy });
     return attributesOf(children, parseState(context.syncCursor));
   }
 
