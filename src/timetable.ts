@@ -48,10 +48,22 @@ export function seenIn(result: JsonObject, timeZone: string): [string, SeenLesso
       change,
       previousRoom: change ? clipOrNull(room.previous) : null,
       previousTeacher: change ? clipOrNull(teacher.previous) : null,
-      note: change ? clipOrNull(text(periodText.substitution) ?? text(periodText.info)) : null,
+      note: clipOrNull(noteOf(periodText)),
     };
     return [[String(period.id), { day: localDate(start, timeZone), lesson }]];
   });
+}
+
+/**
+ * What the school writes about a Lesson, changed or not: the text of its Timetable Change and its
+ * info, one part a line, without repeats and without a bare "entfällt" that its change already says.
+ */
+function noteOf(periodText: JsonObject): string | null {
+  const parts = [periodText.substitution, periodText.info]
+    .flatMap((value) => (text(value) ?? "").split(";"))
+    .flatMap((part) => text(part) ?? [])
+    .filter((part) => part.toLowerCase() !== "entfällt");
+  return parts.length === 0 ? null : [...new Set(parts)].join("\n");
 }
 
 type Names = { name: string | null; previous: string | null };

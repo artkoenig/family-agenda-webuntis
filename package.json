@@ -1,6 +1,6 @@
 {
   "name": "family-agenda-webuntis",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "The WebUntis Source Type of Family Agenda as a stateless plugin container.",
@@ -17,8 +17,8 @@
     "check": "pnpm typecheck && pnpm test"
   },
   "dependencies": {
-    "@family-agenda/plugin-contract": "github:artkoenig/family-agenda#df8a893&path:/packages/plugin-contract",
-    "@family-agenda/plugin-kit": "github:artkoenig/family-agenda#df8a893&path:/packages/plugin-kit",
+    "@family-agenda/plugin-contract": "github:artkoenig/family-agenda#d0722f4&path:/packages/plugin-contract",
+    "@family-agenda/plugin-kit": "github:artkoenig/family-agenda#d0722f4&path:/packages/plugin-kit",
     "undici": "8.9.0"
   },
   "devDependencies": {
