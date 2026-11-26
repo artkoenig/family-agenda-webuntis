@@ -287,6 +287,28 @@ describe("the WebUntis plugin", () => {
     expect(withdrawn).toEqual(["1201/90001"]);
   });
 
+  it("notes what the school writes about a Lesson, also one as planned, one part a line", async () => {
+    const untis = server();
+    const german = lessonIn(untis.timetables[1201]!, 90001);
+    german.text = { lesson: "", substitution: "", info: " Lesebuch mitbringen " };
+    const physics = lessonIn(untis.timetables[1201]!, 90003);
+    physics.text = { lesson: "", substitution: "entfällt; Lehrkraft erkrankt", info: "Lehrkraft erkrankt;Aufgaben in Moodle" };
+
+    const notes = statements((await webUntisPlugin({ fetch: untis.fetch }).poll()).sourceRecords);
+
+    expect(notes.find((statement) => statement.key === "1201/90001")).toMatchObject({ change: null, note: "Lesebuch mitbringen" });
+    expect(notes.find((statement) => statement.key === "1201/90003")?.note).toBe("Lehrkraft erkrankt\nAufgaben in Moodle");
+  });
+
+  it("notes nothing when the school writes only that a Lesson is cancelled", async () => {
+    const untis = server();
+    lessonIn(untis.timetables[1201]!, 90003).text = { lesson: "", substitution: "Entfällt", info: " ; " };
+
+    const notes = statements((await webUntisPlugin({ fetch: untis.fetch }).poll()).sourceRecords);
+
+    expect(notes.find((statement) => statement.key === "1201/90003")?.note).toBeNull();
+  });
+
   it("clips texts to what a Lesson keeps", async () => {
     const untis = server();
     const physics = lessonIn(untis.timetables[1201]!, 90003);
