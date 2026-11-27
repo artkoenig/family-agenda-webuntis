@@ -1,10 +1,11 @@
 # Family Agenda WebUntis plugin
 
-The WebUntis Source Type (`webuntis`) of [Family Agenda](https://github.com/artkoenig/family-agenda) as a stateless plugin container. It reads the Timetables of a parent account's children through the endpoints of the Untis Mobile app and answers the plugin contract over HTTP. It is built with the plugin kit (`docs/plugin-kit.md` of Family Agenda).
+The WebUntis Source Type (`webuntis`) of [Family Agenda](https://github.com/artkoenig/family-agenda) as a stateless plugin container. It reads the Timetables and exams of a parent account's children through the endpoints of the Untis Mobile app and answers the plugin contract over HTTP. It is built with the plugin kit (`docs/plugin-kit.md` of Family Agenda).
 
 - Each request is authenticated with a one-time password (TOTP, RFC 6238) from the key of "Access through Untis Mobile" in the WebUntis profile.
 - Each child of the account is a Source Attribute, under its Untis id; a child that joins is declared, one that goes is archived. A student's own account is read as its only child.
 - Each run reads the next 14 days, today included, and states every Lesson whole, keyed by child and Untis's id, with its Timetable Change (cancellation, substitution, room change) as the Untis flags tell. A coming Lesson gone from the Timetable is withdrawn; a past one is forgotten. The sync cursor holds the children declared and the day of each Lesson read.
+- Each run also reads the exams of the next 90 days, such as a Klassenarbeit, and states each as an event titled by its subject and name ("Mathematik: 2. Mathearbeit"), in its room, keyed by child and `exam:` with Untis's id. An exam gone from the list is withdrawn like a Lesson. A school that does not let the account read exams (`no right`) gives none; the Timetable is still read.
 - Errors name a refusal by Untis's numeric code and a failed connection by its system error code only, never by a message, which could repeat parts of the request.
 - Configuration (version 1): `server` (a host field, such as `park.webuntis.com`), `school`, `user`, `secret` (the key, secret).
 
