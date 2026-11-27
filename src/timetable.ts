@@ -2,14 +2,13 @@ import { statedTextLimits, type SourceRecord } from "@family-agenda/plugin-contr
 
 export type JsonObject = Record<string, unknown>;
 
-type Stated = Extract<SourceRecord["content"], { kind: "stated" }>["stated"];
+export type Stated = Extract<SourceRecord["content"], { kind: "stated" }>["stated"];
 type StatedLesson = Extract<Stated, { kind: "lesson" }>;
 
-/** A Lesson of the days read, on the Family's day it takes place. */
-export type SeenLesson = { day: string; lesson: StatedLesson };
+/** The names of a Timetable's subjects, rooms and teachers by their ids, from its master data. */
+export type MasterNames = { subjects: Map<number, string>; rooms: Map<number, string>; teachers: Map<number, string> };
 
-/** The Lessons of a Timetable, which Untis calls periods, with their Timetable Changes, by their ids. */
-export function seenIn(result: JsonObject, timeZone: string): [string, SeenLesson][] {
+export function masterNamesOf(result: JsonObject): MasterNames {
   const master = isObject(result.masterData) ? result.masterData : {};
   const named = (list: unknown, name: (entry: JsonObject) => string | null) =>
     new Map(
@@ -24,6 +23,15 @@ export function seenIn(result: JsonObject, timeZone: string): [string, SeenLesso
     const full = [text(teacher.firstName), text(teacher.lastName)].filter(Boolean).join(" ");
     return full || text(teacher.name);
   });
+  return { subjects, rooms, teachers };
+}
+
+/** A Lesson of the days read, on the Family's day it takes place. */
+export type SeenLesson = { day: string; lesson: StatedLesson };
+
+/** The Lessons of a Timetable, which Untis calls periods, with their Timetable Changes, by their ids. */
+export function seenIn(result: JsonObject, timeZone: string): [string, SeenLesson][] {
+  const { subjects, rooms, teachers } = masterNamesOf(result);
   const timetable = isObject(result.timetable) ? result.timetable : {};
   const periods = (Array.isArray(timetable.periods) ? timetable.periods : []).filter(isObject);
   return periods.flatMap((period): [string, SeenLesson][] => {
@@ -107,7 +115,7 @@ const clipOrNull = (value: string | null): string | null => (value === null ? nu
  * The instant of a Lesson's time. Untis Mobile writes the school's wall-clock time with a `Z`, as
  * `2026-09-15T08:00Z`, whatever its offset from UTC, so the time is read in the Family's time zone.
  */
-function instantOf(value: unknown, timeZone: string): Date | null {
+export function instantOf(value: unknown, timeZone: string): Date | null {
   const match = typeof value === "string" ? /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value) : null;
   if (!match) return null;
   const [year, month, day, hour, minute] = match.slice(1).map(Number) as [number, number, number, number, number];
@@ -153,7 +161,7 @@ export function timetableRequest(childId: number, today: string, days: number): 
   };
 }
 
-function addDays(date: string, days: number): string {
+export function addDays(date: string, days: number): string {
   const next = new Date(`${date}T00:00:00Z`);
   next.setUTCDate(next.getUTCDate() + days);
   return next.toISOString().slice(0, 10);

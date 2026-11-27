@@ -3,7 +3,8 @@ import { ProxyAgent } from "undici";
 import type { IngestResult, RunContext, SourceRecord } from "@family-agenda/plugin-contract";
 import { PluginError, type PluginImplementation } from "@family-agenda/plugin-kit";
 import packageJson from "../package.json" with { type: "json" };
-import { isObject, localDate, seenIn, text, timetableRequest, type JsonObject } from "./timetable";
+import { examsIn, examsRequest } from "./exams";
+import { isObject, localDate, masterNamesOf, seenIn, text, timetableRequest, type JsonObject, type Stated } from "./timetable";
 
 /**
  * What `fetch` is given to route a request through a proxy, as the global `fetch` types it. Taken
@@ -26,9 +27,12 @@ export const version: string = packageJson.version;
 /** How many days of Timetable each run reads, today included. */
 const daysAhead = 14;
 
+/** How many days of exams each run reads, today included: a school announces them weeks ahead. */
+const examDaysAhead = 90;
+
 /**
  * The sync cursor: the ids of the children declared as Source Attributes, and the day of every
- * Lesson of the days read, by key, to notice those that go. A cursor from before the children were
+ * Lesson and exam of the days read, by key, to notice those that go. A cursor from before the children were
  * Source Attributes has no `declared`.
  */
 type State = { declared: string[] | null; known: Record<string, string> };
@@ -58,7 +62,8 @@ type Run = { config: RunContext["config"]; now: Date; egressProxy: string };
  * Untis Mobile (`docs/research/webuntis-parent-access.md` of Family Agenda). One login lists the
  * children; each child's Timetable is then read as a STUDENT's. Each run states every Lesson of the
  * days read whole, with how it deviates from the Timetable as the Untis flags tell, keyed by child
- * and the id Untis gives the Lesson; the core skips those that are unchanged.
+ * and the id Untis gives the Lesson, and every exam of the coming weeks as an event, keyed by child
+ * and `exam:` with the exam's id; the core skips those that are unchanged.
  */
 export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): PluginImplementation {
   const fetch = options.fetch ?? globalThis.fetch;
@@ -66,7 +71,9 @@ export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): Plugi
   const timeoutMs = options.timeoutMs ?? 30_000;
 
   /** Calls a method of the mobile API with a fresh one-time password, and returns its result. */
-  async function call(run: Run, method: string, params: JsonObject): Promise<JsonObject> {
+  async function call(run: Run, method: string, params: JsonObject): Promise<JsonObject>;
+  async function call(run: Run, method: string, params: JsonObject, ifAllowed: true): Promise<JsonObject | null>;
+  async function call(run: Run, method: string, params: JsonObject, ifAllowed = false): Promise<JsonObject | null> {
     const { server, school, user } = connectionOf(run.config);
     const url = new URL(`https://${server}/WebUntis/jsonrpc_intern.do`);
     url.searchParams.set("m", method);
@@ -89,7 +96,9 @@ export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): Plugi
       const message = `WebUntis answered with HTTP ${response.status}.`;
       throw new PluginError(response.status === 404 ? "definite" : "temporary", message);
     }
-    return parseAnswer(await readJson(response), method);
+    const answer = await readJson(response);
+    if (ifAllowed && isObject(answer.error) && answer.error.code === noRight) return null;
+    return parseAnswer(answer, method);
   }
 
   /** The children of the account, or the account itself if it is a student's. */
@@ -114,10 +123,14 @@ export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): Plugi
     const known: Record<string, string> = {};
     for (const child of children) {
       const result = await call(run, "getTimetable2017", timetableRequest(child.id, today, daysAhead));
-      for (const [lessonId, seen] of seenIn(result, context.timeZone)) {
-        const key = `${child.id}/${lessonId}`;
-        known[key] = seen.day;
-        sourceRecords.push({ externalId: key, attributes: [String(child.id)], content: { kind: "stated", stated: seen.lesson } });
+      const stated: [id: string, day: string, item: Stated][] = seenIn(result, context.timeZone).map(([id, seen]) => [id, seen.day, seen.lesson]);
+      // An account the school does not let read exams reads none.
+      const exams = await call(run, "getExams2017", examsRequest(child.id, today, examDaysAhead), true);
+      if (exams) stated.push(...examsIn(exams, masterNamesOf(result), context.timeZone).map(([id, seen]): [string, string, Stated] => [id, seen.day, seen.event]));
+      for (const [id, day, item] of stated) {
+        const key = `${child.id}/${id}`;
+        known[key] = day;
+        sourceRecords.push({ externalId: key, attributes: [String(child.id)], content: { kind: "stated", stated: item } });
       }
     }
     const state: State = { declared: children.map((child) => String(child.id)).toSorted(), known };
@@ -142,8 +155,8 @@ export function createWebUntisPlugin(options: WebUntisPluginOptions = {}): Plugi
       displayName: { en: "WebUntis", de: "WebUntis" },
       version,
       description: {
-        en: "Reads the children's Timetables and Timetable Changes from WebUntis, with the key of a parent account's access through Untis Mobile.",
-        de: "Liest die Stundenpläne und Stundenplanänderungen der Kinder aus WebUntis, mit dem Schlüssel für den Zugriff über Untis Mobile eines Elternkontos.",
+        en: "Reads the children's Timetables, Timetable Changes and exams from WebUntis, with the key of a parent account's access through Untis Mobile.",
+        de: "Liest die Stundenpläne, Stundenplanänderungen und Prüfungen der Kinder aus WebUntis, mit dem Schlüssel für den Zugriff über Untis Mobile eines Elternkontos.",
       },
       needsLlm: false,
       configuration: {
@@ -270,6 +283,8 @@ async function readJson(response: Response): Promise<JsonObject> {
 const badCredentials = -8504;
 const notAuthenticated = -8520;
 const refusedLogin = new Set([badCredentials, notAuthenticated]);
+/** Untis's JSON-RPC error code for a method the account may not call, such as exams at some schools. */
+const noRight = -8509;
 
 /**
  * The result of a JSON-RPC answer. A refusal is told by its numeric code only: the message Untis

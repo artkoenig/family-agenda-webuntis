@@ -25,7 +25,11 @@ const egressProxy = "http://ticket:a-ticket@plugin-webuntis-egress:3128";
  * A WebUntis server answering the mobile API with recorded responses: the parent's children, and
  * each child's Timetable, which a test may change between runs.
  */
-function server(timetables: Record<number, Json> = { 1201: fixture("timetable-mia.json"), 1202: fixture("timetable-leo.json") }) {
+function server(
+  timetables: Record<number, Json> = { 1201: fixture("timetable-mia.json"), 1202: fixture("timetable-leo.json") },
+  // Leo's school does not let his parents read exams.
+  exams: Record<number, Json> = { 1201: fixture("exams-mia.json") },
+) {
   const requests: Call[] = [];
   const answers: { userData: Json | Response | Error } = { userData: fixture("user-data.json") };
   const fetch = (input: string | URL | Request, init?: RequestInit) => {
@@ -41,9 +45,13 @@ function server(timetables: Record<number, Json> = { 1201: fixture("timetable-mi
       const timetable = timetables[Number(body.params[0]?.id)];
       return Promise.resolve(Response.json(timetable ?? { jsonrpc: "2.0", id: "family-agenda", error: { code: -7004, message: "no right for timetable" } }));
     }
+    if (body.method === "getExams2017") {
+      const answer = exams[Number(body.params[0]?.id)];
+      return Promise.resolve(Response.json(answer ?? { jsonrpc: "2.0", id: "family-agenda", error: { code: -8509, message: "no right" } }));
+    }
     return Promise.resolve(Response.json({ jsonrpc: "2.0", id: "family-agenda", error: { code: -32601, message: "Method not found" } }));
   };
-  return { fetch, requests, answers, timetables };
+  return { fetch, requests, answers, timetables, exams };
 }
 
 type Context = { config?: { plain: Record<string, unknown>; secrets: Record<string, string> }; syncCursor?: string | null; now?: Date; egressProxy?: string };
@@ -70,6 +78,12 @@ function webUntisPlugin(options: WebUntisPluginOptions) {
 const statements = (records: IngestResult["sourceRecords"]) =>
   records.flatMap((record) =>
     record.content.kind === "stated" && record.content.stated.kind === "lesson" ? [{ key: record.externalId, ...record.content.stated }] : [],
+  );
+
+/** Each Source Record as its key and the event it states. */
+const events = (records: IngestResult["sourceRecords"]) =>
+  records.flatMap((record) =>
+    record.content.kind === "stated" && record.content.stated.kind === "event" ? [{ key: record.externalId, ...record.content.stated }] : [],
   );
 
 const childrenOf = (records: IngestResult["sourceRecords"]) => new Set(records.map((record) => record.externalId.split("/")[0]));
@@ -123,14 +137,18 @@ describe("the WebUntis plugin", () => {
     expect(untis.requests.map(({ url, body }) => ({ url: `${url.origin}${url.pathname}`, school: url.searchParams.get("school"), method: body.method }))).toEqual([
       { url: "https://park.webuntis.com/WebUntis/jsonrpc_intern.do", school: "gym-am-park", method: "getUserData2017" },
       { url: "https://park.webuntis.com/WebUntis/jsonrpc_intern.do", school: "gym-am-park", method: "getTimetable2017" },
+      { url: "https://park.webuntis.com/WebUntis/jsonrpc_intern.do", school: "gym-am-park", method: "getExams2017" },
       { url: "https://park.webuntis.com/WebUntis/jsonrpc_intern.do", school: "gym-am-park", method: "getTimetable2017" },
+      { url: "https://park.webuntis.com/WebUntis/jsonrpc_intern.do", school: "gym-am-park", method: "getExams2017" },
     ]);
     for (const { body } of untis.requests) {
       expect(body.params[0]?.auth).toEqual({ user: "anna.koenig", otp: 81804, clientTime: 1111111109000 });
     }
     expect(untis.requests.slice(1).map(({ body }) => ({ ...body.params[0], auth: undefined }))).toMatchObject([
       { id: 1201, type: "STUDENT", startDate: 20050318, endDate: 20050331 },
+      { id: 1201, type: "STUDENT", startDate: "2005-03-18", endDate: "2005-06-15" },
       { id: 1202, type: "STUDENT", startDate: 20050318, endDate: 20050331 },
+      { id: 1202, type: "STUDENT", startDate: "2005-03-18", endDate: "2005-06-15" },
     ]);
   });
 
@@ -244,6 +262,8 @@ describe("the WebUntis plugin", () => {
       ["1201/90002", ["1201"]],
       ["1201/90003", ["1201"]],
       ["1201/90004", ["1201"]],
+      ["1201/exam:7001", ["1201"]],
+      ["1201/exam:7002", ["1201"]],
       ["1202/91001", ["1202"]],
     ]);
     expect(sourceRecords.every((record) => record.occurredAt === undefined)).toBe(true);
@@ -285,6 +305,79 @@ describe("the WebUntis plugin", () => {
     expect(statements(sourceRecords).map((statement) => statement.key)).toEqual(["1201/90002", "1201/90003", "1201/90004", "1202/91001"]);
     expect(statements(sourceRecords).find((statement) => statement.key === "1201/90004")?.span).toEqual(span("2026-09-16", "08:50", "09:35"));
     expect(withdrawn).toEqual(["1201/90001"]);
+  });
+
+  it("states each child's exams of the coming weeks as events, titled by subject and name, in their room", async () => {
+    const { sourceRecords } = await webUntisPlugin({ fetch: server().fetch }).poll();
+
+    expect(events(sourceRecords)).toEqual([
+      { key: "1201/exam:7001", kind: "event", title: "Mathematik: 1. Mathearbeit", span: span("2026-09-17", "08:00", "08:45"), place: "101", cancelled: false },
+      {
+        key: "1201/exam:7002",
+        kind: "event",
+        title: "Englisch: Klassenarbeit – Vokabeln Unit 2",
+        span: span("2026-10-20", "08:50", "09:35"),
+        place: null,
+        cancelled: false,
+      },
+    ]);
+  });
+
+  it("names an exam by its type, or as Prüfung, when it has no name, and by its name alone when its subject is unknown", async () => {
+    const untis = server();
+    const [first, second] = (untis.exams[1201]!.result as { exams: Json[] }).exams as [Json, Json];
+    Object.assign(first, { name: "", subjectId: 99 });
+    Object.assign(second, { name: " ", examType: "", text: "" });
+
+    const { sourceRecords } = await webUntisPlugin({ fetch: untis.fetch }).poll();
+
+    expect(events(sourceRecords).map((event) => event.title)).toEqual(["Klassenarbeit", "Englisch: Prüfung"]);
+  });
+
+  it("skips an exam without an id or a time it can read, and clips a long title", async () => {
+    const untis = server();
+    const list = (untis.exams[1201]!.result as { exams: Json[] }).exams;
+    const [first] = list as [Json];
+    first.name = "x".repeat(600);
+    list.push({ ...first, id: "7003" }, { ...first, id: 7004, startDateTime: "tomorrow" }, { ...first, id: 7005, endDateTime: first.startDateTime });
+
+    const { sourceRecords } = await webUntisPlugin({ fetch: untis.fetch }).poll();
+
+    expect(events(sourceRecords).map((event) => event.key)).toEqual(["1201/exam:7001", "1201/exam:7002"]);
+    expect(events(sourceRecords)[0]!.title).toHaveLength(500);
+  });
+
+  it("withdraws a coming exam gone from the list, as when the school calls it off", async () => {
+    const untis = server();
+    const plugin = webUntisPlugin({ fetch: untis.fetch });
+    const first = await plugin.poll();
+    const result = untis.exams[1201]!.result as { exams: Json[] };
+    result.exams = result.exams.filter((exam) => exam.id !== 7002);
+
+    const { withdrawn } = await plugin.poll({ syncCursor: first.syncCursor });
+
+    expect(withdrawn).toEqual(["1201/exam:7002"]);
+  });
+
+  it("reads no exams, but the Timetable still, when the school does not let the account read them", async () => {
+    const { sourceRecords } = await webUntisPlugin({ fetch: server(undefined, {}).fetch }).poll();
+
+    expect(events(sourceRecords)).toEqual([]);
+    expect(statements(sourceRecords)).toHaveLength(5);
+  });
+
+  it("fails as on the Timetable when WebUntis refuses the exams otherwise", async () => {
+    const refusal = { jsonrpc: "2.0", id: "family-agenda", error: { code: -7004, message: "something else" } };
+
+    const { status, body } = await webUntisPlugin({ fetch: server(undefined, { 1201: refusal }).fetch }).answer();
+
+    expect({ status, body }).toEqual({ status: 422, body: { kind: "definite", message: "WebUntis refused getExams2017 (error -7004)." } });
+  });
+
+  it("reads exams with no list as none", async () => {
+    const { sourceRecords } = await webUntisPlugin({ fetch: server(undefined, { 1201: { jsonrpc: "2.0", id: "family-agenda", result: {} } }).fetch }).poll();
+
+    expect(events(sourceRecords)).toEqual([]);
   });
 
   it("notes what the school writes about a Lesson, also one as planned, one part a line", async () => {
@@ -335,7 +428,7 @@ describe("the WebUntis plugin", () => {
 
     const { sourceRecords, withdrawn } = await plugin.poll({ syncCursor: first.syncCursor, now: new Date("2026-09-17T07:00:00Z") });
 
-    expect(sourceRecords).toEqual([]);
+    expect(statements(sourceRecords)).toEqual([]);
     expect(withdrawn).toEqual([]);
   });
 
